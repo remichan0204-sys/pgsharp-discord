@@ -10,56 +10,66 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_URL")
 @app.route("/data", methods=["POST"])
 def translate_and_send():
     pg_data = request.get_json(silent=True) or {}
+    
+    # Check if the packet contains account data
+    if "account" in pg_data:
+        # Check standard container slots or look for loose keys in the JSON dump
+        pokemon_list = pg_data.get("pokemon", []) or pg_data.get("items", [])
+        
+        # If the structure is loose, check if the payload itself acts as a direct list wrapper
+        if not pokemon_list and isinstance(pg_data, list):
+            pokemon_list = pg_data
 
-    # Base payload for Discord
-    discord_payload = {}
+        special_pokemon = []
 
-    # Check if this is a real Pokémon spawn by looking for latitude
-    if "latitude" in pg_data and pg_data["latitude"] is not None:
-        # Handle Real Pokemon Data Feed
-        pokemon_id = pg_data.get("pokemon_id", "Unknown Pokemon")
-        lat = pg_data["latitude"]
-        lng = pg_data["longitude"]
-        
-        # Calculate IV Percentage safely
-        atk = pg_data.get("individual_attack", 0)
-        dfn = pg_data.get("individual_defense", 0)
-        sta = pg_data.get("individual_stamina", 0)
-        iv_total = atk + dfn + sta
-        iv_percent = round((iv_total / 45) * 100) if iv_total <= 45 else iv_total
-        
-        level = pg_data.get("pokemon_level", "??")
-        maps_link = f"https://google.com{lat},{lng}"
-        
+        # Scan the 6,000 lines for the keys found in your snippet!
+        for mon in pokemon_list:
+            if not isinstance(mon, dict):
+                continue
+                
+            display = mon.get("pokemonDisplay", {})
+            
+            # Extract data using the exact keys from your VS Code snippet
+            is_shiny = display.get("shiny") == True
+            location_card = display.get("locationCard")
+            has_bg = location_card is not None and location_card != 0 and location_card != "null"
+            
+            if is_shiny or has_bg:
+                mon_id = mon.get("pokemonId", "Unknown")
+                form_name = display.get("formName", "")
+                cp = mon.get("cp", 0)
+                
+                # Format visual descriptions
+                traits = []
+                if is_shiny:
+                    traits.append("✨ Shiny")
+                if has_bg:
+                    traits.append(f"🖼️ BG ({location_card})")
+                    
+                traits_text = " + ".join(traits)
+                special_pokemon.append(f"• **ID {mon_id}** ({form_name}) - CP {cp} [{traits_text}]")
+
+        # Package the collection overview text block
+        if special_pokemon:
+            report_text = "\n".join(special_pokemon[:30]) # Show top 30 to stay within Discord size rules
+            if len(special_pokemon) > 30:
+                report_text += f"\n*...and {len(special_pokemon) - 30} more special targets found!*"
+        else:
+            report_text = "No custom Shiny or Location Card profiles detected inside this snapshot loop."
+
         discord_payload = {
             "embeds": [
                 {
-                    "title": f"⭐ Spawn Detected: ID {pokemon_id}",
-                    "color": 16711680,  # Red
-                    "fields": [
-                        {"name": "📊 IV Percentage", "value": f"**{iv_percent}%**", "inline": True},
-                        {"name": "⚔️ Level", "value": f"Lvl {level}", "inline": True},
-                        {"name": "📍 Coordinates (Tap to Copy)", "value": f"`{lat}, {lng}`", "inline": False},
-                    ],
-                    "description": f"🔗 [Open in Google Maps]({maps_link})"
-                }
-            ]
-        }
-    else:
-        # Handle Test Connection Pings (empty payload or missing coords)
-        discord_payload = {
-            "embeds": [
-                {
-                    "title": "✅ PGSharp Connection Successful!",
-                    "description": "Your cloud server is live and listening for spawns.",
-                    "color": 65280,  # Green
+                    "title": "🏆 Collector Vault Synced Successfully",
+                    "color": 16753920, # Warm Gold
+                    "description": report_text,
+                    "footer": {"text": "24/7 PGSharp Inventory Sync Enabled"}
                 }
             ]
         }
 
-    # Send formatted embed to Discord
-    if DISCORD_WEBHOOK_URL:
-        requests.post(DISCORD_WEBHOOK_URL, json=discord_payload)
+        if DISCORD_WEBHOOK_URL:
+            requests.post(DISCORD_WEBHOOK_URL, json=discord_payload)
     
     return "OK", 200
 
