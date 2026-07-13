@@ -9,34 +9,26 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_URL")
 
 @app.route("/data", methods=["POST"])
 def translate_and_send():
-    pg_data = request.get_json(silent=True)
+    pg_data = request.get_json(silent=True) or {}
 
     # Base payload for Discord
     discord_payload = {}
 
-    if not pg_data:
-        # Handle Test Connection Ping
-        discord_payload = {
-            "embeds": [
-                {
-                    "title": "✅ PGSharp Connection Successful!",
-                    "description": "Your cloud server is live and listening for spawns.",
-                    "color": 65280,  # Green
-                }
-            ]
-        }
-    else:
+    # Check if this is a real Pokémon spawn by looking for latitude
+    if "latitude" in pg_data and pg_data["latitude"] is not None:
         # Handle Real Pokemon Data Feed
-        # Safely extract common PGSharp/Mapping data structures
         pokemon_id = pg_data.get("pokemon_id", "Unknown Pokemon")
-        lat = pg_data.get("latitude")
-        lng = pg_data.get("longitude")
-        iv = pg_data.get("individual_attack", 0) + pg_data.get("individual_defense", 0) + pg_data.get("individual_stamina", 0)
-        # Calculate percentage if base stats are out of 15
-        iv_percent = round((iv / 45) * 100) if iv <= 45 else iv
-        level = pg_data.get("pokemon_level", "??")
+        lat = pg_data["latitude"]
+        lng = pg_data["longitude"]
         
-        # Build a clickable Google Maps coordinates link
+        # Calculate IV Percentage safely
+        atk = pg_data.get("individual_attack", 0)
+        dfn = pg_data.get("individual_defense", 0)
+        sta = pg_data.get("individual_stamina", 0)
+        iv_total = atk + dfn + sta
+        iv_percent = round((iv_total / 45) * 100) if iv_total <= 45 else iv_total
+        
+        level = pg_data.get("pokemon_level", "??")
         maps_link = f"https://google.com{lat},{lng}"
         
         discord_payload = {
@@ -50,6 +42,17 @@ def translate_and_send():
                         {"name": "📍 Coordinates (Tap to Copy)", "value": f"`{lat}, {lng}`", "inline": False},
                     ],
                     "description": f"🔗 [Open in Google Maps]({maps_link})"
+                }
+            ]
+        }
+    else:
+        # Handle Test Connection Pings (empty payload or missing coords)
+        discord_payload = {
+            "embeds": [
+                {
+                    "title": "✅ PGSharp Connection Successful!",
+                    "description": "Your cloud server is live and listening for spawns.",
+                    "color": 65280,  # Green
                 }
             ]
         }
