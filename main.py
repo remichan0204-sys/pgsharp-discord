@@ -9,21 +9,22 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_URL")
 
 @app.route("/data", methods=["POST"])
 def translate_and_send():
-    pg_data = request.get_json(silent=True) or {}
+    # 1. Grab the completely raw, untouched data bytes from your phone
+    raw_bytes = request.data
+    data_length = len(raw_bytes) if raw_bytes else 0
 
-    # Gather the primary top-level layout blocks
-    main_keys = list(pg_data.keys())
+    # 2. Try to pull out any readable words/text hidden inside the raw packet
+    extracted_text = ""
+    if data_length > 0:
+        # Extract letters, numbers, and symbols from the binary data
+        readable_chars = [chr(b) for b in raw_bytes if 32 <= b <= 126]
+        extracted_text = "".join(readable_chars)[:300]  # Grab the first 300 characters
 
-    # Look one step deeper into the "account" block if it exists
-    account_keys = []
-    if "account" in pg_data and isinstance(pg_data["account"], dict):
-        account_keys = list(pg_data["account"].keys())
-
-    # Build a simple text summary of your file's layout
+    # 3. Create a raw debugger alert for Discord
     debug_message = (
-        "🔬 **Diagnostic Reset Triggered**\n\n"
-        f"**Top-Level Keys found:** `{main_keys}`\n\n"
-        f"**Keys inside 'account' block:** `{account_keys[:15]}`..."
+        "🛰️ **Raw Stream Packet Caught!**\n"
+        f"• **Total Packet Size:** `{data_length}` bytes\n"
+        f"• **First 300 Text Snippets:** `{extracted_text}`"
     )
 
     discord_payload = {"content": debug_message}
